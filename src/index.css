@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+
+/* =========================================================
+   SmartTraffic: poori website ke liye responsive rules
+   Ek hi jagah, har component badalne ki zaroorat nahi
+   ========================================================= */
+
+/* Side-scroll kabhi nahi */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Media screen se bahar na jaye */
+img,
+video,
+canvas,
+svg,
+iframe {
+  max-width: 100%;
+}
+
+/* Lambe words/email/ID layout na todein */
+h1,
+h2,
+h3,
+h4,
+p,
+span,
+li,
+td,
+th,
+a,
+label {
+  overflow-wrap: break-word;
+}
+
+/* Map ke andar ke layers navbar/dropdown/sidebar ke upar na aayein */
+.leaflet-container {
+  position: relative;
+  z-index: 0;
+  max-width: 100%;
+}
+
+/* ---------- Tablet aur phone (768px se chhoti screen) ---------- */
+@media (max-width: 768px) {
+  /* Tables phone par side mein scroll hon */
+  table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* iPhone input par zoom na kare */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  /* Ungli se dabane layak size */
+  button {
+    min-height: 40px;
+  }
+
+  /* Login page ka fixed height phone par content kaat deta hai */
+  [class*="h-[92vh]"] {
+    height: auto;
+    min-height: 92vh;
+  }
+
+  /* Map phone par bahut chhota na ho */
+  .leaflet-container {
+    min-height: 260px;
+  }
+}
+
+/* ---------- Chhoti phone screen (640px se chhoti) ---------- */
+@media (max-width: 640px) {
+  /* Bade padding phone par jagah khaate hain */
+  .p-8,
+  .p-10,
+  .p-14 {
+    padding: 1.25rem;
+  }
+
+  /* Bade headings phone par chhote */
+  h1 {
+    font-size: 1.6rem;
+    line-height: 1.25;
+  }
+}
