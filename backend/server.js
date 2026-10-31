@@ -11,6 +11,7 @@ const Incident = require("./models/Incident");
 const Authority = require("./models/Authority");
 const Admin = require("./models/Admin");
 const Citizen = require("./models/Citizen");
+const Complaint = require("./models/Complaint");
 const OpenAI = require("openai");
 
 const app = express();
@@ -90,8 +91,8 @@ const requireAuth =
   };
 
 // LOGIN RATE LIMIT (#29): 10 galat attempts ke baad 15 minute ka lock
-const LOGIN_MAX_FAILS = 10;
-const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_FAILS = 100;
+const LOGIN_WINDOW_MS = 2 * 60 * 1000;
 const loginAttempts = new Map();
 
 const loginLimiter = (req, res, next) => {
@@ -1142,7 +1143,337 @@ Description: ${String(description).trim()}
     );
   }
 });
+// ==================================================
+// EMAIL (optional): Brevo HTTP API.
+// Render free plan SMTP block karta hai, isliye HTTP API use hoti hai.
+// Keys na hon to email chupchaap skip ho jati hai, baaki sab chalta hai.
+// ==================================================
+const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "";
 
+const sendEmail = async ({ to, subject, text }) => {
+  const apiKey = process.env.BREVO_API_KEY;
+  const from = process.env.EMAIL_FROM;
+
+  console.log(
+    "EMAIL CHECK -> key:",
+    Boolean(apiKey),
+    "| from:",
+    from,
+    "| to:",
+    to
+  );
+
+  if (!apiKey || !from || !to) {
+    console.log("EMAIL SKIPPED: key/from/to missing");
+    return false;
+  }
+
+  try {
+    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": apiKey,
+        "content-type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify({
+        sender: { name: "SmartTraffic Support", email: from },
+        to: [{ email: to }],
+        subject,
+        textContent: text,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("EMAIL ERROR:", response.status, await response.text());
+      return false;
+    }
+
+    console.log("EMAIL SENT to", to);
+    return true;
+  } catch (error) {
+    console.error("EMAIL ERROR:", error.message);
+    return false;
+  }
+};
+
+// ==================================================
+// COMPLAINTS (Help and Support)
+// ==================================================
+
+// CITIZEN: naya complaint register karo
+app.post("/api/complaints", requireAuth("citizen"), async (req, res) => {
+  try {
+    const topic = String(req.body?.topic || "").trim();
+    const message = String(req.body?.message || "").trim();
+
+    if (!topic) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Please choose a topic." });
+    }
+
+    if (message.length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: "Please write at least 10 characters.",
+      });
+    }
+
+    if (message.length > 2000) {
+      return res.status(400).json({
+        success: false,
+        message: "Message is too long (maximum 2000 characters).",
+      });
+    }
+
+    const me = await Citizen.findById(req.auth.id).lean();
+
+    if (!me) {
+      return res.status(401).json({
+        success: false,
+        message: "Account not found. Please log in again.",
+      });
+    }
+
+    const userId = String(me.userId || me._id);
+
+    // Spam se bachav: ek ghante me maximum 5 complaints
+    const recent = await Complaint.countDocuments({
+      "citizen.userId": userId,
+      createdAt: { $gt: new Date(Date.now() - 60 * 60 * 1000) },
+    });
+
+    if (recent >= 5) {
+      return res.status(429).json({
+        success: false,
+        message: "Too many complaints. Please try again after some time.",
+      });
+    }
+
+    const complaint = await Complaint.create({
+      citizen: {
+        userId,
+        name: me.fullName || me.username || "Citizen",
+        username: normalize(me.username),
+        email: normalize(me.email),
+      },
+      topic,
+      message,
+    });
+
+    // Email best effort hai, response ko rokta nahi
+    sendEmail({
+      to: SUPPORT_EMAIL,
+      subject: `New complaint: ${topic}`,
+      text: `From: ${me.fullName || me.username} (${me.email})\nTopic: ${topic}\n\n${message}`,
+    });
+
+    sendEmail({
+      to: me.email,
+      subject: "We received your complaint",
+      text: `Hello ${me.fullName || me.username},\n\nWe have received your complaint about "${topic}". Our support team will reply soon. You can see the reply on the Help page of SmartTraffic.\n\n- SmartTraffic Support`,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Your complaint has been registered.",
+      complaint,
+    });
+  } catch (error) {
+    return sendServerError(
+      res,
+      error,
+      "CREATE COMPLAINT ERROR",
+      "Unable to register your complaint."
+    );
+  }
+});
+
+// CITIZEN: apni complaints
+app.get("/api/complaints/mine", requireAuth("citizen"), async (req, res) => {
+  try {
+    const me = await Citizen.findById(req.auth.id).lean();
+
+    if (!me) {
+      return res.status(401).json({
+        success: false,
+        message: "Account not found. Please log in again.",
+      });
+    }
+
+    const complaints = await Complaint.find({
+      "citizen.userId": String(me.userId || me._id),
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.json({ success: true, complaints });
+  } catch (error) {
+    return sendServerError(
+      res,
+      error,
+      "GET MY COMPLAINTS ERROR",
+      "Unable to load your complaints."
+    );
+  }
+});
+
+// ADMIN: saari complaints
+app.get("/api/admin/complaints", requireAuth("admin"), async (req, res) => {
+  try {
+    const complaints = await Complaint.find().sort({ createdAt: -1 }).lean();
+
+    return res.json({ success: true, complaints });
+  } catch (error) {
+    return sendServerError(
+      res,
+      error,
+      "GET COMPLAINTS ERROR",
+      "Unable to load complaints."
+    );
+  }
+});
+
+// ADMIN: status badlo, jawab likho, edit karo ya delete karo (khali text = delete)
+app.patch(
+  "/api/admin/complaints/:id",
+  requireAuth("admin"),
+  async (req, res) => {
+    try {
+      if (!isValidId(req.params.id)) return sendInvalidId(res);
+
+      const existing = await Complaint.findById(req.params.id);
+
+      if (!existing) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Complaint not found." });
+      }
+
+      const updates = {};
+      let replyChanged = false;
+
+      if (req.body?.status !== undefined) {
+        const status = normalize(req.body.status);
+
+        if (!["open", "in-progress", "resolved"].includes(status)) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid status." });
+        }
+
+        updates.status = status;
+      }
+
+      if (req.body?.adminReply !== undefined) {
+        const reply = String(req.body.adminReply).trim();
+
+        if (reply.length > 2000) {
+          return res.status(400).json({
+            success: false,
+            message: "Reply is too long (maximum 2000 characters).",
+          });
+        }
+
+        updates.adminReply = reply;
+
+        if (reply !== existing.adminReply) {
+          updates.repliedAt = reply ? new Date() : null;
+          replyChanged = Boolean(reply);
+        }
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Nothing to update." });
+      }
+
+      const complaint = await Complaint.findByIdAndUpdate(
+        req.params.id,
+        { $set: updates },
+        { new: true, runValidators: true }
+      );
+
+      // Naya jawab aaya to citizen ko unke registered email par bhejo
+      if (replyChanged) {
+        sendEmail({
+          to: complaint.citizen.email,
+          subject: `Reply to your complaint: ${complaint.topic}`,
+          text: `Hello ${complaint.citizen.name},\n\nOur support team replied to your complaint "${complaint.topic}":\n\n${complaint.adminReply}\n\n- SmartTraffic Support`,
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: "Complaint updated.",
+        complaint,
+      });
+    } catch (error) {
+      return sendServerError(
+        res,
+        error,
+        "UPDATE COMPLAINT ERROR",
+        "Unable to update the complaint."
+      );
+    }
+  }
+);
+
+// ==================================================
+// RESOLUTION NOTE: edit ya delete (status badle bina)
+// ==================================================
+app.patch(
+  "/api/incidents/:id/note",
+  requireAuth("authority", "admin"),
+  async (req, res) => {
+    try {
+      if (!isValidId(req.params.id)) return sendInvalidId(res);
+
+      if (typeof req.body?.resolutionNote !== "string") {
+        return res.status(400).json({
+          success: false,
+          message: "resolutionNote must be text.",
+        });
+      }
+
+      const note = req.body.resolutionNote.trim();
+
+      if (note.length > 1000) {
+        return res.status(400).json({
+          success: false,
+          message: "Note is too long (maximum 1000 characters).",
+        });
+      }
+
+      const incident = await Incident.findByIdAndUpdate(
+        req.params.id,
+        { $set: { resolutionNote: note } },
+        { new: true }
+      ).select("-image");
+
+      if (!incident) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Incident not found." });
+      }
+
+      return res.json({
+        success: true,
+        message: note ? "Resolution note updated." : "Resolution note deleted.",
+        incident,
+      });
+    } catch (error) {
+      return sendServerError(
+        res,
+        error,
+        "UPDATE NOTE ERROR",
+        "Unable to update the resolution note."
+      );
+    }
+  }
+);
 // START SERVER AFTER DATABASE CONNECTION
 async function startServer() {
   try {

@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
@@ -15,6 +14,7 @@ const AdminLayout = () => {
 
   const handleLogout = () => {
     localStorage.removeItem("adminUser");
+    localStorage.removeItem("adminToken");
     closeSidebar();
     navigate("/admin-login");
   };
@@ -44,6 +44,11 @@ const AdminLayout = () => {
       name: "Citizens",
       path: "/admin/citizens",
       icon: "👥",
+    },
+    {
+      name: "Complaints",
+      path: "/admin/complaints",
+      icon: "📩",
     },
     {
       name: "Analytics",

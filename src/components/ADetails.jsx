@@ -110,6 +110,16 @@ const ADetails = () => {
     });
   };
 
+  const showNetworkOrMessage = (err, fallback) => {
+    if (err instanceof TypeError) {
+      setActionError(
+        "Cannot connect to the server. Please make sure the backend is running."
+      );
+    } else {
+      setActionError(err.message || fallback);
+    }
+  };
+
   // ==========================================
   // Authority Actions (database mein save hote hain)
   // ==========================================
@@ -144,27 +154,70 @@ const ADetails = () => {
         throw new Error(data.message || "Could not update status.");
       }
 
-      setIncident(data.incident);
+      // merge: backend jawab me photo nahi aati, isliye purani photo rakho
+      setIncident((current) => ({ ...current, ...data.incident }));
       setStatus(toUiStatus(data.incident.status));
       setSuccess(
         `Status updated to ${toUiStatus(data.incident.status)}. Citizen ko ab ye status dikhega.`
       );
     } catch (err) {
       console.error("Update status error:", err);
-
-      if (err instanceof TypeError) {
-        setActionError(
-          "Cannot connect to the server. Please make sure the backend is running."
-        );
-      } else {
-        setActionError(err.message || "Could not update status.");
-      }
+      showNetworkOrMessage(err, "Could not update status.");
     } finally {
       setUpdating(false);
     }
   };
 
+  // Resolution note edit ya delete (status badle bina)
+  const saveNote = async (noteText, okMessage) => {
+    setActionError("");
+    setSuccess("");
+
+    try {
+      setUpdating(true);
+
+      const response = await fetch(`${API_URL}/incidents/${id}/note`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resolutionNote: noteText }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Could not update the note.");
+      }
+
+      setIncident((current) => ({ ...current, ...data.incident }));
+      setResolutionNote(data.incident.resolutionNote || "");
+      setSuccess(okMessage);
+    } catch (err) {
+      console.error("Update note error:", err);
+      showNetworkOrMessage(err, "Could not update the note.");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleUpdateNote = () => {
+    if (!resolutionNote.trim()) {
+      setActionError("Write a note, or use Delete Note to remove it.");
+      setSuccess("");
+      return;
+    }
+
+    saveNote(resolutionNote.trim(), "Resolution note updated.");
+  };
+
+  const handleDeleteNote = () => {
+    if (window.confirm("Delete this resolution note?")) {
+      saveNote("", "Resolution note deleted.");
+    }
+  };
+
   const isResolved = status === "Resolved";
+  const savedNote = incident?.resolutionNote || "";
+  const noteUnchanged = resolutionNote.trim() === savedNote.trim();
 
   // ==========================================
   // Loading
@@ -252,12 +305,12 @@ const ADetails = () => {
 
       {/* HEADER */}
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5">
-        <div>
+        <div className="min-w-0">
           <p className="text-cyan-400 text-sm font-medium">
             Incident Details
           </p>
 
-          <h1 className="text-3xl font-bold mt-1">{incidentId}</h1>
+          <h1 className="text-3xl font-bold mt-1 break-all">{incidentId}</h1>
 
           <p className="text-slate-400 mt-2">
             Reported on {formatDate(incident.createdAt)}
@@ -313,7 +366,7 @@ const ADetails = () => {
 
               <div>
                 <p className="text-xs text-slate-500">Location</p>
-                <p className="font-semibold mt-1">📍 {location}</p>
+                <p className="font-semibold mt-1 break-words">📍 {location}</p>
               </div>
 
               <div>
@@ -325,7 +378,9 @@ const ADetails = () => {
             <div className="mt-6">
               <p className="text-xs text-slate-500">Description</p>
 
-              <p className="text-slate-300 mt-2 leading-7">{description}</p>
+              <p className="text-slate-300 mt-2 leading-7 break-words">
+                {description}
+              </p>
             </div>
           </div>
 
@@ -451,29 +506,54 @@ const ADetails = () => {
 
           {/* RESOLUTION */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
-            <h2 className="text-xl font-bold mb-2">Resolve Incident</h2>
+            <h2 className="text-xl font-bold mb-2">
+              {isResolved ? "Resolution Note" : "Resolve Incident"}
+            </h2>
 
             <p className="text-sm text-slate-400 mb-5">
-              Add a note describing the action taken.
+              {isResolved
+                ? "You can edit or delete the note. The citizen sees the latest note."
+                : "Add a note describing the action taken."}
             </p>
 
             <textarea
               value={resolutionNote}
-              onChange={(e) => setResolutionNote(e.target.value)}
-              disabled={isResolved}
+              onChange={(e) => setResolutionNote(e.target.value.slice(0, 1000))}
               rows="5"
               placeholder="Enter resolution note..."
-              className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white resize-none outline-none focus:border-cyan-500 disabled:opacity-60"
+              className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white resize-none outline-none focus:border-cyan-500"
             />
 
-            <button
-              type="button"
-              onClick={() => updateStatus("resolved")}
-              disabled={updating || isResolved}
-              className="w-full mt-3 py-3 rounded-xl bg-green-500 hover:bg-green-400 text-slate-950 font-bold disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isResolved ? "✓ Already Resolved" : "✓ Resolve Incident"}
-            </button>
+            {isResolved ? (
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={handleUpdateNote}
+                  disabled={updating || noteUnchanged}
+                  className="py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {updating ? "Saving..." : "💾 Update Note"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDeleteNote}
+                  disabled={updating || !savedNote}
+                  className="py-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  🗑 Delete Note
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => updateStatus("resolved")}
+                disabled={updating}
+                className="w-full mt-3 py-3 rounded-xl bg-green-500 hover:bg-green-400 text-slate-950 font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                ✓ Resolve Incident
+              </button>
+            )}
           </div>
 
           {/* LOCATION */}
@@ -481,10 +561,10 @@ const ADetails = () => {
             <h2 className="text-xl font-bold mb-4">Incident Location</h2>
 
             <div className="h-48 rounded-xl bg-slate-800 flex items-center justify-center">
-              <div className="text-center">
+              <div className="text-center px-3">
                 <div className="text-4xl mb-2">📍</div>
 
-                <p className="text-sm text-slate-400">{location}</p>
+                <p className="text-sm text-slate-400 break-words">{location}</p>
               </div>
             </div>
           </div>

@@ -46,6 +46,7 @@ import AdminAuthorities from "./components/AdminAuthorities";
 import AdminCitizens from "./components/AdminCitizens";
 import AdminAnalytics from "./components/AdminAnalytics";
 import AdminMap from "./components/AdminMap";
+import AdminComplaints from "./components/AdminComplaints";
 
 // =========================
 // CONTEXT
@@ -188,6 +189,7 @@ function App() {
           <Route path="citizens" element={<AdminCitizens />} />
           <Route path="analytics" element={<AdminAnalytics />} />
           <Route path="map" element={<AdminMap />} />
+                    <Route path="complaints" element={<AdminComplaints />} />
         </Route>
 
         {/* =========================

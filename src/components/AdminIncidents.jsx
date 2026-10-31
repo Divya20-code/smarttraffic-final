@@ -1,5 +1,3 @@
-
-
 import React, { useCallback, useEffect, useState } from "react";
 
 const API_URL = "http://localhost:5000/api/incidents";
@@ -46,6 +44,12 @@ const AdminIncidents = () => {
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
 
+  // Resolution note editor
+  const [noteEditor, setNoteEditor] = useState(null); // { id, text, original }
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteError, setNoteError] = useState("");
+  const [flash, setFlash] = useState("");
+
   const fetchIncidents = useCallback(async () => {
     try {
       setLoading(true);
@@ -76,6 +80,67 @@ const AdminIncidents = () => {
   useEffect(() => {
     fetchIncidents();
   }, [fetchIncidents]);
+
+  const openNoteEditor = (incident) => {
+    const current = String(incident.resolutionNote || "").trim();
+
+    setNoteError("");
+    setNoteEditor({ id: incident._id, text: current, original: current });
+  };
+
+  const saveNote = async (text) => {
+    if (!noteEditor) return;
+
+    setNoteSaving(true);
+    setNoteError("");
+
+    try {
+      const response = await fetch(`${API_URL}/${noteEditor.id}/note`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resolutionNote: text }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Unable to update the note.");
+      }
+
+      setIncidents((current) =>
+        current.map((item) =>
+          item._id === noteEditor.id
+            ? { ...item, resolutionNote: data.incident.resolutionNote }
+            : item
+        )
+      );
+
+      setFlash(
+        text.trim() ? "Resolution note updated." : "Resolution note deleted."
+      );
+      setTimeout(() => setFlash(""), 4000);
+      setNoteEditor(null);
+    } catch (err) {
+      setNoteError(err.message || "Unable to update the note.");
+    } finally {
+      setNoteSaving(false);
+    }
+  };
+
+  const handleSaveClick = () => {
+    if (!noteEditor.text.trim()) {
+      setNoteError("Write a note, or use Delete Note to remove it.");
+      return;
+    }
+
+    saveNote(noteEditor.text.trim());
+  };
+
+  const handleDeleteClick = () => {
+    if (window.confirm("Delete this resolution note?")) {
+      saveNote("");
+    }
+  };
 
   const visibleIncidents = incidents.filter(
     (incident) =>
@@ -112,6 +177,12 @@ const AdminIncidents = () => {
       {error && (
         <div className="mb-6 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl px-4 py-3">
           {error}
+        </div>
+      )}
+
+      {flash && (
+        <div className="mb-6 bg-green-500/10 border border-green-500/30 text-green-400 rounded-xl px-4 py-3">
+          {flash}
         </div>
       )}
 
@@ -176,6 +247,7 @@ const AdminIncidents = () => {
                     "Status",
                     "Resolution Note",
                     "Date",
+                    "Actions",
                   ].map((heading) => (
                     <th
                       key={heading}
@@ -296,6 +368,16 @@ const AdminIncidents = () => {
                             : ""}
                         </p>
                       </td>
+
+                      <td className="px-5 py-4">
+                        <button
+                          type="button"
+                          onClick={() => openNoteEditor(incident)}
+                          className="whitespace-nowrap rounded-lg bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-400 transition hover:bg-cyan-500/20"
+                        >
+                          {note ? "✏️ Edit note" : "➕ Add note"}
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -313,6 +395,82 @@ const AdminIncidents = () => {
           🔄 Refresh Incidents
         </button>
       </div>
+
+      {/* NOTE EDITOR */}
+      {noteEditor && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => !noteSaving && setNoteEditor(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-6"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 className="text-xl font-bold">Resolution Note</h2>
+
+            <p className="mt-1 text-sm text-slate-400">
+              Incident {noteEditor.id.slice(-8)}. The citizen and authority see
+              the latest note.
+            </p>
+
+            <textarea
+              value={noteEditor.text}
+              onChange={(event) => {
+                setNoteError("");
+                setNoteEditor({
+                  ...noteEditor,
+                  text: event.target.value.slice(0, 1000),
+                });
+              }}
+              rows={5}
+              placeholder="Write the resolution note..."
+              className="mt-4 w-full resize-none rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-white outline-none focus:border-cyan-400"
+            />
+
+            <p className="mt-1 text-right text-xs text-slate-500">
+              {noteEditor.text.length}/1000
+            </p>
+
+            {noteError && (
+              <p className="mt-2 text-sm text-red-400">{noteError}</p>
+            )}
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={handleSaveClick}
+                disabled={
+                  noteSaving ||
+                  noteEditor.text.trim() === noteEditor.original
+                }
+                className="rounded-xl bg-cyan-500 px-5 py-2.5 font-bold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {noteSaving ? "Saving..." : "💾 Save"}
+              </button>
+
+              {noteEditor.original && (
+                <button
+                  type="button"
+                  onClick={handleDeleteClick}
+                  disabled={noteSaving}
+                  className="rounded-xl bg-red-500/10 px-5 py-2.5 font-semibold text-red-400 transition hover:bg-red-500/20 disabled:opacity-50"
+                >
+                  🗑 Delete Note
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setNoteEditor(null)}
+                disabled={noteSaving}
+                className="rounded-xl bg-slate-800 px-5 py-2.5 font-semibold text-slate-300 transition hover:bg-slate-700 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
