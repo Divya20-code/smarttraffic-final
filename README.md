@@ -2,8 +2,8 @@
 # SmartTraffic: Smart Traffic Incident Reporting System
 
 **Student:** [DIVYA]
-**Enrollment / Roll No:** [2300715]
-**Course / College:** [Bhai Gurdas Institute of Engineering and Technology]
+**Roll / Enrollment No:** [2300715]
+**Course and College:** [Bhai Gurdas Institute of Engineering and Technology]
 
 ## Live Project
 
@@ -24,14 +24,15 @@
 
 ## About the Project
 
-SmartTraffic lets citizens report traffic incidents (accident, road block, congestion, vehicle breakdown) with location, photo and description. An AI model analyses each report and suggests incident type, severity, risk indicators and a recommended response. Authorities review and update reports, and the admin supervises the whole system.
+SmartTraffic lets citizens report traffic incidents (accident, road block, congestion, vehicle breakdown) with a map location, a photo and a description. An AI model analyses each report and suggests the incident type, severity, risk indicators and a recommended response. Authorities review and update reports, and the admin supervises the whole system.
 
 ### Features
 
-- **Citizen:** register and login, report an incident with map location and photo, AI analysis, track My Reports, traffic map, analytics, light and dark theme
-- **Authority:** login, view all incidents, update status, assign team, add resolution note
-- **Admin:** dashboard statistics, manage authorities (add, enable, disable), view citizens, analytics, incident map
-- **Security:** JWT authentication, role-based access (citizen, authority, admin), bcrypt password hashing, login rate limiting
+- **Citizen:** register and login, report an incident with map location (search suggestions, draggable pin, GPS) and photo, AI analysis, track My Reports, traffic map, analytics, light and dark theme, Help page to register complaints and see replies
+- **Authority:** login, view all incidents, update status, assign team, add, edit or delete the resolution note
+- **Admin:** dashboard statistics, manage authorities (add, enable, disable), view citizens, analytics, incident map, view and reply to citizen complaints, edit or delete resolution notes
+- **Email notifications (optional):** support team gets an email when a complaint is registered, and the citizen gets an email when the admin replies
+- **Security:** JWT authentication, role-based access (citizen, authority, admin), bcrypt password hashing, login rate limiting, restricted CORS
 
 ## Tech Stack
 
@@ -41,6 +42,7 @@ SmartTraffic lets citizens report traffic incidents (accident, road block, conge
 | Backend | Node.js, Express 5 |
 | Database | MongoDB Atlas with Mongoose |
 | AI | Groq API (OpenAI-compatible) |
+| Email | Brevo HTTP API (optional) |
 | Auth | JWT, bcryptjs |
 | Hosting | Vercel (frontend), Render (backend), MongoDB Atlas (database) |
 
@@ -48,17 +50,19 @@ SmartTraffic lets citizens report traffic incidents (accident, road block, conge
 
 ```
 project/
-├── backend/              Express server
-│   ├── models/           Mongoose models (Citizen, Incident, Authority, Admin)
-│   ├── server.js         All API routes
-│   ├── db.js             MongoDB connection
-│   ├── createAdmin.js    Creates the first admin
-│   └── createAuthority.js  Creates the first authority officer
-├── src/                  React frontend
-│   ├── components/       Pages and UI components
-│   ├── context/          Theme and user context
-│   ├── authFetch.js      Adds the JWT token to API calls
-│   └── main.jsx          App entry point
+├── backend/                 Express server
+│   ├── models/              Citizen, Incident, Authority, Admin, Complaint
+│   ├── server.js            All API routes
+│   ├── db.js                MongoDB connection
+│   ├── createAdmin.js       Creates the first admin
+│   ├── createAuthority.js   Creates the first authority officer
+│   └── .env.example         Names of the required environment variables
+├── src/                     React frontend
+│   ├── components/          Pages and UI components
+│   ├── context/             Theme and user context
+│   ├── authFetch.js         Adds the JWT token to API calls
+│   └── main.jsx             App entry point
+├── vercel.json
 └── package.json
 ```
 
@@ -73,13 +77,21 @@ cd backend
 npm install
 ```
 
-Create a file `backend/.env` (see `backend/.env.example`):
+Create `backend/.env` using `backend/.env.example` as a guide:
 
 ```
 MONGO_URI=your_mongodb_connection_string
 GROQ_API_KEY=your_groq_api_key
 JWT_SECRET=any_long_random_text
 PORT=5000
+```
+
+Optional, only for email notifications:
+
+```
+BREVO_API_KEY=your_brevo_api_key
+EMAIL_FROM=your_verified_sender_email
+SUPPORT_EMAIL=where_complaint_alerts_should_go
 ```
 
 Create the first admin and authority (run once):
@@ -110,7 +122,7 @@ Open http://localhost:5173
 
 ## Restore the Database
 
-The folder `backup/` contains a full backup of the database (created with `mongodump`). To restore it into your own MongoDB:
+The folder `backup/` contains a full backup of the database (created with `mongodump`), including citizens, incidents, authorities, admins and complaints. To restore it into your own MongoDB:
 
 ```bash
 mongorestore --uri="your_mongodb_connection_string" --nsInclude="smarttraffic.*" backup
@@ -123,7 +135,8 @@ mongorestore --uri="your_mongodb_connection_string" --nsInclude="smarttraffic.*"
 | `MONGO_URI` | Backend | MongoDB connection string |
 | `GROQ_API_KEY` | Backend | AI analysis |
 | `JWT_SECRET` | Backend | Signing login tokens |
-| `FRONTEND_URL` | Backend (hosting) | Allowed website for CORS |
+| `FRONTEND_URL` | Backend (hosting) | Website allowed by CORS |
+| `BREVO_API_KEY`, `EMAIL_FROM`, `SUPPORT_EMAIL` | Backend (optional) | Email notifications |
 | `VITE_API_URL` | Frontend (hosting) | Backend URL |
 
 ## Deployment
